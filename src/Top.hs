@@ -9,109 +9,78 @@ import qualified Data.Set as Set
 
 main :: IO ()
 main = do
-  runSem (evalToSem _fib)
+  runSem (evalToSem _triangleTailRecExample)
+  runSem (evalToSem _triangleExample)
+  runSem (evalToSem _fibExample)
 
   where
 
-    (n,f,c,arg,acc,k,res,res1) = ("n","f","c","arg","acc","k","res","res1")
+    returnTo :: Name -> Exp -> Prog
+    returnTo k e = Tail (Get c (Var k)) [(k,Var k),(res,e)]
 
-    _triangleTRa =
-      LetFun f [arg]
-      (
-        Let n (Get n (Var arg)) $
-        Let acc (Get acc (Var arg)) $
-        If (Less (Var n) (Lit 1)) (Print (Var acc) Halt) $
-        LetAlloc arg [(acc, Add (Var n) (Var acc))
-                       ,(n, Sub (Var n) (Lit 1))] $
-        Tail (Var f) [(arg, Var arg)]
-      ) $
-      LetAlloc arg [(acc, Lit 0),(n,Lit 6)] $
-      Tail (Var f) [(arg, Var arg)]
+    finish = Def [k,res] (Print (Var res) Halt)
 
-    _triangleTR =
-      LetFun f [n,acc]
-      (
-        If (Less (Var n) (Lit 1)) (Print (Var acc) Halt) $
-        Tail (Var f) [(acc, Add (Var n) (Var acc))
-                 ,(n, Sub (Var n) (Lit 1))]
-      ) $
-      Tail (Var f) [(acc, Lit 0),(n,Lit 6)]
+    (n,f,c,acc,k,res,res1) = ("n","f","c","acc","k","res","res1")
 
-    retK :: Name -> Exp -> Prog
-    retK k e =
-      Tail (Get c (Var k)) [(k,Var k),(res,e)]
+    _triangleTailRecExample =
+      Tail (LitD triangleTR) [(acc, Lit 0),(n,Lit 6)]
+      where
+        triangleTR = Def [n,acc]
+          (
+            If (Less (Var n) (Lit 1)) (Print (Var acc) Halt) $
+            Tail (LitD triangleTR) [(acc, Add (Var n) (Var acc))
+                                   ,(n, Sub (Var n) (Lit 1))]
+          )
 
-    _triangle =
-      LetFun f [n,k]
-      (
-        If (Less (Var n) (Lit 1)) (
-          retK k (Lit 0)
-        ) $
-        LetFun c [k,res] (
-          Let n (Get n (Var k)) $
-          Let k (Get k (Var k)) $
-          retK k (Add (Var res) (Var n))
-        ) $
-        LetAlloc k [(c,Var c)
-                   ,(k,Var k)
-                   ,(n,Var n)
-                   ] $
-        Tail (Var f) [(k, Var k)
-                     ,(n, Sub (Var n) (Lit 1))]
-      ) $
-      LetFun c [k,res] (Print (Var res) Halt) $
-      LetAlloc k [(c,Var c)] $
-      Tail (Var f) [(n,Lit 5),(k,Var k)]
+    _triangleExample =
+      LetAlloc k [(c,LitD finish)] $
+      Tail (LitD triangle) [(n,Lit 7),(k,Var k)]
+      where
+        triangle = Def [n,k]
+          (
+            If (Less (Var n) (Lit 1)) (returnTo k (Lit 0)) $
+            LetAlloc k [(c,LitD cont),(k,Var k),(n,Var n)] $
+            Tail (LitD triangle) [(k,Var k),(n,Sub (Var n) (Lit 1))]
+          )
+        cont = Def [k,res]
+          (
+            Let n (Get n (Var k)) $
+            Let k (Get k (Var k)) $
+            returnTo k (Add (Var res) (Var n))
+          )
 
-
-
-    _fib =
-      LetFun f [n,k]
-      (
-        If (Less (Var n) (Lit 2)) (
-          retK k (Var n)
-        ) $
-
-        LetFun c [k,res] (
-          Let n (Get n (Var k)) $
-          Let f (Get f (Var k)) $
-          Let k (Get k (Var k)) $
-
-          LetFun c [k,res] (
+    _fibExample =
+      LetAlloc k [(c,LitD finish)] $
+      Tail (LitD fib) [(n,Lit 10),(k,Var k)]
+      where
+        fib = Def [n,k]
+          (
+            If (Less (Var n) (Lit 2)) (returnTo k (Var n)) $
+            LetAlloc k [(c,LitD cont1),(k,Var k),(n,Var n)] $
+            Tail (LitD fib) [(k,Var k),(n,Sub (Var n) (Lit 1))]
+          )
+        cont1 = Def [k,res]
+          (
+            Let n (Get n (Var k)) $
+            Let f (Get f (Var k)) $
+            Let k (Get k (Var k)) $
+            LetAlloc k [(c,LitD cont2),(k,Var k),(res1,Var res)] $
+            Tail (LitD fib) [(k,Var k),(n,Sub (Var n) (Lit 2))]
+          )
+        cont2 = Def [k,res]
+          (
             Let res1 (Get res1 (Var k)) $
             Let k (Get k (Var k)) $
-            retK k (Add (Var res1) (Var res))
-            ) $
-          LetAlloc k [(c,Var c) ,(k,Var k) ,(res1,Var res)] $
-          Tail (Var f) [(k, Var k)
-                       ,(n, Sub (Var n) (Lit 2))]
+            returnTo k (Add (Var res1) (Var res))
+          )
 
-        ) $
-        LetAlloc k [(c,Var c),(k,Var k),(n,Var n),(f,Var f)] $
-        Tail (Var f) [(k, Var k)
-                     ,(n, Sub (Var n) (Lit 1))]
-
-      ) $
-      LetFun c [k,res] (Print (Var res) Halt) $
-      LetAlloc k [(c,Var c)] $
-      Tail (Var f) [(n,Lit 10),(k,Var k)]
-
-
-_ = (triangleTR,triangle)
-  where
-    triangleTR :: Int -> Int -> Int
-    triangleTR n acc =
-      if (n==0) then acc else triangleTR (n-1) (acc+n)
-
-    triangle :: Int -> (Int -> r) -> r
-    triangle n k =
-      if (n==0) then k 0 else triangle (n-1) $ \res -> k (n+res)
+data Def = Def [Name] Prog
+  deriving Show
 
 data Prog
   = Halt
   | Print Exp Prog
   | Let Name Exp Prog
-  | LetFun Name [Name] Prog Prog
   | LetAlloc Name [(Name,Exp)] Prog
   | Tail Exp [(Name,Exp)]
   | If Exp Prog Prog
@@ -119,6 +88,7 @@ data Prog
 
 data Exp
   = Lit Int
+  | LitD Def
   | Less Exp Exp
   | Add Exp Exp
   | Sub Exp Exp
@@ -141,15 +111,13 @@ evalToSem prog = exec Map.empty prog
       Let x rhs body -> do
         v <- eval q rhs
         exec (Map.insert x v q) body
-      LetFun f formals body prog ->
-        exec (Map.insert f (Code f formals body) q) prog
       Tail f args -> do
         fn <- eval q f
-        let (self,formals,body) = deCode fn
+        let Def formals body = deDef fn
         let actuals = map fst args
-        if (Set.fromList formals /= Set.fromList actuals) then error (show ("Tail,mismatch",f,formals,actuals)) else do
+        if (Set.fromList formals /= Set.fromList actuals) then error (show ("Tail,mismatch",formals,actuals)) else do
           args <- evalBinds q args
-          let q' = Map.fromList ((self,fn):args)
+          let q' = Map.fromList args
           exec q' body
       LetAlloc name binds prog -> do
         binds <- evalBinds q binds
@@ -163,7 +131,8 @@ evalToSem prog = exec Map.empty prog
 
     eval :: Env -> Exp -> Sem Value
     eval q = \case
-      Lit n -> pure (N n)
+      Lit num -> pure (N num)
+      LitD def -> pure (D def)
       Less e1 e2 -> do
         v1 <- eval q e1
         v2 <- eval q e2
@@ -190,13 +159,18 @@ evalToSem prog = exec Map.empty prog
 
 type Env = Map Name Value
 
-data Value = P Pointer | N Int | Code Name [Name] Prog
-  deriving Show
+data Value = P Pointer | N Int | D Def
 
-deCode :: Value -> (Name,[Name],Prog)
-deCode = \case
-  Code fn formals x -> (fn,formals,x)
-  x -> error (show ("not code",x))
+instance Show Value where
+  show = \case
+    P p -> show p
+    N n -> show n
+    D (Def _args _) -> "\\" ++ show _args
+
+deDef :: Value -> Def
+deDef = \case
+  D d -> d
+  x -> error (show ("not def",x))
 
 dePointer :: Value -> Pointer
 dePointer = \case
@@ -228,42 +202,51 @@ data Sem a where
 
 type Name = String
 
-data Pointer = POINTER [(Name,Value)] -- TODO
-  deriving Show
+data Pointer = POINTER Int deriving (Eq,Ord)
+instance Show Pointer where show (POINTER x) = printf "p%d" x
 
 runSem :: Sem () -> IO ()
-runSem sem0 = run sem0 k0
+runSem sem0 = run state0 sem0 k0
   where
-    k0 :: () -> IO ()
-    k0 = \() -> pure ()
 
-    run :: Sem a -> (a -> IO ()) -> IO ()
-    run sem0 k = case sem0 of
-      Ret x -> k x
-      Bind sem f -> run sem $ \a -> run (f a) k
-      SemPrint s -> do
-        printf "Print: %s\n" s
-        k ()
+    debug = False
+    dlog msg = if debug then putStr msg else pure ()
+
+    state0 = State { u = 0, mem = Map.empty }
+
+    k0 :: State -> () -> IO ()
+    k0 = \_ () -> pure ()
+
+    run :: State -> Sem a -> (State -> a -> IO ()) -> IO ()
+    run s@State{u,mem} sem0 k = case sem0 of
+      Ret x -> k s x
+      Bind sem f -> run s sem $ \s a -> run s (f a) k
+      SemPrint msg -> do
+        printf "Print: %s\n" msg
+        k s ()
       SemLess n1 n2 -> do
         let res = if (n1 < n2) then 1 else 0
-        printf "Less: %d < %d --> %d\n" n1 n2 res
-        k res
+        dlog $ printf "Less: %d < %d --> %d\n" n1 n2 res
+        k s res
       SemAdd n1 n2 -> do
         let res = n1 + n2
-        printf "Add: %d + %d --> %d\n" n1 n2 res
-        k res
+        dlog $ printf "Add: %d + %d --> %d\n" n1 n2 res
+        k s res
       SemSub n1 n2 -> do
         let res = n1 - n2
-        printf "Sub: %d - %d --> %d\n" n1 n2 res
-        k res
+        dlog $ printf "Sub: %d - %d --> %d\n" n1 n2 res
+        k s res
       Alloc xs -> do
-        let p = POINTER xs
-        --printf "Alloc: %s\n" (show xs)
-        printf "Alloc: %s\n" (show (map fst xs))
-        k p
-      SemGet name (POINTER xs) ->
-        k $ the (show ("Get",name,map fst xs)) [ v | (n,v) <- xs, n == name ]
+        let p = POINTER u
+        dlog $ printf "Alloc: %s = %s\n" (show p) (show xs)
+        k s { u = u + 1, mem = Map.insert p xs mem} p
+      SemGet name p -> do
+        let xs = maybe err id $ Map.lookup p mem
+              where err = (error (show ("SetGet,mem-lookup",p)))
+        k s $ the (show ("Get",name,p,map fst xs)) [ v | (n,v) <- xs, n == name ]
 
+
+data State = State { u :: Int, mem :: Map Pointer [(Name,Value)] }
 
 the :: String -> [xs] -> xs
 the msg = \case
