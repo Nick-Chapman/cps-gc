@@ -9,62 +9,92 @@ import qualified Data.Set as Set
 
 main :: IO ()
 main = do
-  runSem (evalToSem _triangle)
+  runSem (evalToSem _fib)
 
   where
 
-    (n,f,arg,acc,k,res,c) = ("n","f","arg","acc","k","res","c")
+    (n,f,c,arg,acc,k,res,res1) = ("n","f","c","arg","acc","k","res","res1")
 
     _triangleTRa =
       LetFun f [arg]
       (
         Let n (Get n (Var arg)) $
         Let acc (Get acc (Var arg)) $
-        IfZero (Var n) (Print (Var acc) Halt) $
+        If (Less (Var n) (Lit 1)) (Print (Var acc) Halt) $
         LetAlloc arg [(acc, Add (Var n) (Var acc))
                        ,(n, Sub (Var n) (Lit 1))] $
-        Tail f [(arg, Var arg)]
+        Tail (Var f) [(arg, Var arg)]
       ) $
       LetAlloc arg [(acc, Lit 0),(n,Lit 6)] $
-      Tail f [(arg, Var arg)]
+      Tail (Var f) [(arg, Var arg)]
 
     _triangleTR =
       LetFun f [n,acc]
       (
-        IfZero (Var n) (Print (Var acc) Halt) $
-        Tail f [(acc, Add (Var n) (Var acc))
+        If (Less (Var n) (Lit 1)) (Print (Var acc) Halt) $
+        Tail (Var f) [(acc, Add (Var n) (Var acc))
                  ,(n, Sub (Var n) (Lit 1))]
       ) $
-      Tail f [(acc, Lit 0),(n,Lit 6)]
+      Tail (Var f) [(acc, Lit 0),(n,Lit 6)]
 
+    retK :: Name -> Exp -> Prog
+    retK k e =
+      Tail (Get c (Var k)) [(k,Var k),(res,e)]
 
     _triangle =
       LetFun f [n,k]
       (
-        IfZero (Var n) (
-          Let c (Get c (Var k)) $
-          Tail c [(k,Var k),(res,Lit 0)]
+        If (Less (Var n) (Lit 1)) (
+          retK k (Lit 0)
         ) $
         LetFun c [k,res] (
           Let n (Get n (Var k)) $
           Let k (Get k (Var k)) $
-          Let c (Get c (Var k)) $
-          Tail c [(k,Var k)
-                 ,(res,Add (Var res) (Var n))]
+          retK k (Add (Var res) (Var n))
         ) $
         LetAlloc k [(c,Var c)
                    ,(k,Var k)
                    ,(n,Var n)
                    ] $
-        Tail f [(k, Var k)
-               ,(n, Sub (Var n) (Lit 1))]
+        Tail (Var f) [(k, Var k)
+                     ,(n, Sub (Var n) (Lit 1))]
       ) $
       LetFun c [k,res] (Print (Var res) Halt) $
-      LetAlloc k [(c,Var c)
-                 ] $
-      Tail f [(n,Lit 5)
-             ,(k,Var k)]
+      LetAlloc k [(c,Var c)] $
+      Tail (Var f) [(n,Lit 5),(k,Var k)]
 
+
+
+    _fib =
+      LetFun f [n,k]
+      (
+        If (Less (Var n) (Lit 2)) (
+          retK k (Var n)
+        ) $
+
+        LetFun c [k,res] (
+          Let n (Get n (Var k)) $
+          Let f (Get f (Var k)) $
+          Let k (Get k (Var k)) $
+
+          LetFun c [k,res] (
+            Let res1 (Get res1 (Var k)) $
+            Let k (Get k (Var k)) $
+            retK k (Add (Var res1) (Var res))
+            ) $
+          LetAlloc k [(c,Var c) ,(k,Var k) ,(res1,Var res)] $
+          Tail (Var f) [(k, Var k)
+                       ,(n, Sub (Var n) (Lit 2))]
+
+        ) $
+        LetAlloc k [(c,Var c),(k,Var k),(n,Var n),(f,Var f)] $
+        Tail (Var f) [(k, Var k)
+                     ,(n, Sub (Var n) (Lit 1))]
+
+      ) $
+      LetFun c [k,res] (Print (Var res) Halt) $
+      LetAlloc k [(c,Var c)] $
+      Tail (Var f) [(n,Lit 10),(k,Var k)]
 
 
 _ = (triangleTR,triangle)
@@ -77,20 +107,19 @@ _ = (triangleTR,triangle)
     triangle n k =
       if (n==0) then k 0 else triangle (n-1) $ \res -> k (n+res)
 
-
-
 data Prog
   = Halt
   | Print Exp Prog
   | Let Name Exp Prog
   | LetFun Name [Name] Prog Prog
   | LetAlloc Name [(Name,Exp)] Prog
-  | Tail Name [(Name,Exp)]
-  | IfZero Exp Prog Prog
+  | Tail Exp [(Name,Exp)]
+  | If Exp Prog Prog
   deriving Show
 
 data Exp
   = Lit Int
+  | Less Exp Exp
   | Add Exp Exp
   | Sub Exp Exp
   | Get Name Exp
@@ -115,8 +144,8 @@ evalToSem prog = exec Map.empty prog
       LetFun f formals body prog ->
         exec (Map.insert f (Code f formals body) q) prog
       Tail f args -> do
-        let fn = maybe err id $ Map.lookup f q where err = (error (show ("Tail,lookup",f)))
-        let (self,formals,body) = deCode f fn
+        fn <- eval q f
+        let (self,formals,body) = deCode fn
         let actuals = map fst args
         if (Set.fromList formals /= Set.fromList actuals) then error (show ("Tail,mismatch",f,formals,actuals)) else do
           args <- evalBinds q args
@@ -127,15 +156,18 @@ evalToSem prog = exec Map.empty prog
         p <- Alloc binds
         let q' = Map.insert name (P p) q
         exec q' prog
-      IfZero cond prog1 prog2 -> do
+      If cond prog1 prog2 -> do
         n <- deNum <$> eval q cond
-        exec q (if (n==0) then prog1 else prog2)
-
+        exec q (if (n/=0) then prog1 else prog2)
 
 
     eval :: Env -> Exp -> Sem Value
     eval q = \case
       Lit n -> pure (N n)
+      Less e1 e2 -> do
+        v1 <- eval q e1
+        v2 <- eval q e2
+        N <$> SemLess (deNum v1) (deNum v2)
       Add e1 e2 -> do
         v1 <- eval q e1
         v2 <- eval q e2
@@ -161,10 +193,10 @@ type Env = Map Name Value
 data Value = P Pointer | N Int | Code Name [Name] Prog
   deriving Show
 
-deCode :: String -> Value -> (Name,[Name],Prog)
-deCode tag = \case
+deCode :: Value -> (Name,[Name],Prog)
+deCode = \case
   Code fn formals x -> (fn,formals,x)
-  x -> error (show ("not code", tag, x))
+  x -> error (show ("not code",x))
 
 dePointer :: Value -> Pointer
 dePointer = \case
@@ -187,6 +219,7 @@ data Sem a where
   Ret :: a -> Sem a
   Bind :: Sem a -> (a -> Sem b) -> Sem b
   SemPrint :: String -> Sem ()
+  SemLess :: Int -> Int -> Sem Int
   SemAdd :: Int -> Int -> Sem Int
   SemSub :: Int -> Int -> Sem Int
   Alloc :: [(Name,Value)] -> Sem Pointer
@@ -211,6 +244,10 @@ runSem sem0 = run sem0 k0
       SemPrint s -> do
         printf "Print: %s\n" s
         k ()
+      SemLess n1 n2 -> do
+        let res = if (n1 < n2) then 1 else 0
+        printf "Less: %d < %d --> %d\n" n1 n2 res
+        k res
       SemAdd n1 n2 -> do
         let res = n1 + n2
         printf "Add: %d + %d --> %d\n" n1 n2 res
